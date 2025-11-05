@@ -187,7 +187,6 @@
     <div class="controls" role="group" aria-label="system controls">
       <button id="startBtn" disabled>LOADING...</button>
       <button id="stopBtn" class="hidden">TERMINATE</button>
-      <button id="presetBtn" class="hidden">PRESET: CHROMATIC</button>
       <button id="recordBtn" class="hidden">● RECORD</button>
     </div>
 
@@ -207,7 +206,6 @@
 
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
-    const presetBtn = document.getElementById('presetBtn');
     const recordBtn = document.getElementById('recordBtn');
     const hud = document.getElementById('hud');
     const timestamp = document.getElementById('timestamp');
@@ -250,32 +248,7 @@
         envelope: { attack: 0.04, decay: 0.15, sustain: 0.6, release: 0.6 },
         threshold: 20,
         lifetime: 500
-      },
-      folk: {
-        name: 'INDIE FOLK',
-        scale: ['E3','G3','A3','B3','D4','E4','G4','A4','B4','D5','E5','G5'],
-        oscillator: 'triangle',
-        envelope: { attack: 0.3, decay: 0.4, sustain: 0.7, release: 1.2 },
-        threshold: 15,
-        lifetime: 1500
-      },
-      classical: {
-        name: 'CLASSICAL',
-        scale: ['C3','D3','E3','F3','G3','A3','B3','C4','D4','E4','F4','G4','A4','B4',
-                'C5','D5','E5','F5','G5','A5','B5'],
-        oscillator: 'sawtooth',
-        envelope: { attack: 0.15, decay: 0.3, sustain: 0.5, release: 0.6 },
-        threshold: 20,
-        lifetime: 600
-      },
-      rave: {
-        name: 'RAVE',
-        scale: ['C2','D2','E2','F2','G2','A2','C3','D3','E3','F3','G3','A3',
-                'C4','E4','G4','C5','E5','G5'],
-        oscillator: 'square',
-        envelope: { attack: 0.001, decay: 0.1, sustain: 0.2, release: 0.1 },
-        threshold: 10,
-        lifetime: 200
+      
       }
     };
 
@@ -334,10 +307,13 @@
     }
 
     // --- NOTE utilities ---
+    // ✅ FIX 1: stable deterministic mapping (same horizontal region -> same note)
     function getNoteForPosition(x, y, width){
-      let idx = Math.floor((x / width) * chromaticScale.length);
-      idx = Math.max(0, Math.min(idx, chromaticScale.length -1));
-      return chromaticScale[idx];
+      if (!width || width <= 0) return chromaticScale[0];
+      const norm = Math.min(Math.max(x / width, 0), 0.9999); // clamp and avoid exactly 1
+      const idx = Math.floor(norm * chromaticScale.length);
+      const safeIdx = Math.max(0, Math.min(idx, chromaticScale.length - 1));
+      return chromaticScale[safeIdx];
     }
 
     // --- Motion detection ---
@@ -557,7 +533,22 @@
     }
 
     // Start / Stop handlers
+    // ✅ FIX 2: safe restart: ensure camera is initialized when starting
     async function startMusic(){
+      // If camera hasn't been initialized / was terminated, make sure it's set up
+      if (!stream) {
+        try {
+          startBtn.textContent = 'LOADING...';
+          startBtn.disabled = true;
+          await setupCamera(); // re-request camera and size canvases
+        } catch (e) {
+          // setupCamera already shows an alert on failure; restore button state
+          startBtn.textContent = 'INITIALIZE SYSTEM';
+          startBtn.disabled = false;
+          return;
+        }
+      }
+
       await Tone.start(); // user gesture required
       
       // MOBILE FIX: Force audio context to resume
@@ -570,7 +561,6 @@
 
       startBtn.classList.add('hidden');
       stopBtn.classList.remove('hidden');
-      presetBtn.classList.remove('hidden');
       recordBtn.classList.remove('hidden');
       hud.classList.remove('hidden');
       timestamp.classList.remove('hidden');
@@ -600,7 +590,6 @@
 
       startBtn.classList.remove('hidden');
       stopBtn.classList.add('hidden');
-      presetBtn.classList.add('hidden');
       recordBtn.classList.add('hidden');
       hud.classList.add('hidden');
       timestamp.classList.add('hidden');
@@ -614,24 +603,7 @@
       if (timestampInterval) { clearInterval(timestampInterval); timestampInterval = null; }
       
       startBtn.textContent = 'RESTART SYSTEM';
-    }
-    
-    // Preset toggle
-    function cyclePreset() {
-      const presetKeys = Object.keys(presets);
-      const currentIndex = presetKeys.indexOf(currentPreset);
-      const nextIndex = (currentIndex + 1) % presetKeys.length;
-      currentPreset = presetKeys[nextIndex];
-      
-      chromaticScale = presets[currentPreset].scale;
-      presetBtn.textContent = 'PRESET: ' + presets[currentPreset].name;
-      
-      // Rebuild synths with new settings
-      synths.forEach(s => { try { s.dispose(); } catch(e){} });
-      setupAudio();
-      
-      // Reset targets since scale changed
-      activeTargets = [];
+      startBtn.disabled = false;
     }
     
     // Recording functions
@@ -738,7 +710,6 @@
     // event wiring
     startBtn.addEventListener('click', startMusic);
     stopBtn.addEventListener('click', stopMusic);
-    presetBtn.addEventListener('click', cyclePreset);
     recordBtn.addEventListener('click', toggleRecording);
 
     // init
