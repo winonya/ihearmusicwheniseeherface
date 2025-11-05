@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>i hear music when i see her face — multi (mirrored overlay)</title>
+
+  <!-- Tone (CDN) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html,body { height: 100%; background: 09FF00; color:#00ff00; font-family: "Courier New", monospace; }
+
+    /* Main wrapper — vertical flow: video -> controls -> instructions */
+    .wrap {
+      max-width: 900px;
+      margin: 24px auto;
+      padding: 0px;
+      display:flex;
+      flex-direction:column;
+      gap:18px;
+      align-items:center;
+    }
+
+    h1 {
+      font-family: 'Brush Script MT', cursive;
+      color: black;
+      font-size: 2.2rem;
+      text-align:center;
+      margin-bottom: 4px;
+    }
+
+    /* VIDEO CONTAINER: set explicit block layout so controls cannot overlap */
+    .video-container {
+      width: 100%;
+      max-width: 900px;
+      position: relative; /* for overlay canvas + hud */
+      display: block;     /* ensure it participates in normal flow */
+      border: 2px solid #000;
+      overflow: hidden;
+      background: #000;
+    }
+
+    /* keep video responsive inside container */
+    video {
+      width: 100%;
+      height: auto;
+      display:block;            /* crucial: keeps container height equal to video height */
+      transform: scaleX(-1);   /* mirror the webcam feed (selfie view) */
+      filter: contrast(1.1) brightness(0.92);
+    }
+
+    /* overlay canvas sits on top of video (absolute inside .video-container)
+       Keep unmirrored - text will be readable */
+    #overlayCanvas {
+      position:absolute;
+      top:0; left:0;
+      width:100%;
+      height:100%;
+      pointer-events:none;
+      z-index: 5;
+    }
+
+    /* HUD and timestamp are DOM text elements placed over the video.
+       Keep unmirrored so text is readable */
+    .hud {
+      position:absolute;
+      top:10px;
+      left:10px;
+      font-size:0.78rem;
+      color:#00ff00;
+      text-shadow: 0 0 5px #00ff00;
+      pointer-events:none;
+      z-index: 6;
+    }
+
+    .timestamp {
+      position:absolute;
+      top:10px;
+      right:10px;
+      font-size:0.78rem;
+      color:#00ff00;
+      text-shadow: 0 0 5px #00ff00;
+      pointer-events:none;
+      z-index: 6;
+    }
+
+    /* controls live under the video (outside .video-container) */
+    .controls {
+      width: 100%;
+      max-width: 900px;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      gap:15px;
+      flex-wrap:wrap;
+      margin-top: 6px;
+      position: relative;
+      z-index: 9999;
+    }
+
+    button {
+      padding: 10px 15px;
+      font-family: 'Courier New', monospace;
+      font-size: 1rem;
+      color: black;
+      background: rgba(0,255,0,0.06);
+      border: 2px solid #000;
+      cursor: pointer;
+    }
+
+    button:hover:not(:disabled){ background: rgba(0,255,0,0.18); color:#001; }
+    button:disabled{ opacity: .45; cursor: not-allowed; }
+    
+    #recordBtn.recording {
+      background: rgba(255,0,0,0.2);
+      border-color: #ff0000;
+      color: #ff0000;
+      text-shadow: 0 0 6px #ff0000;
+      animation: pulse 1s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    .instructions {
+      width:100%;
+      border:1px solid #00ff00;
+      background: rgba(0,255,0,0.025);
+      padding: 12px;
+      font-size: 0.88rem;
+      color:#00ff00;
+    }
+
+    .scanline {
+      position:absolute;
+      top:0; left:0;
+      width:100%; height:100%;
+      pointer-events:none;
+      background: linear-gradient(to bottom, transparent 50%, rgba(0,255,0,0.03) 50%);
+      background-size:100% 4px;
+      animation: scanline 8s linear infinite;
+      mix-blend-mode: screen;
+      z-index:4;
+    }
+
+    @keyframes scanline { 0%{background-position:0 0} 100%{background-position:0 100%} }
+
+    /* hidden helper */
+    .hidden{ display:none !important; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>i hear music when i see her face</h1>
+
+    <!-- VIDEO + OVERLAY -->
+    <div class="video-container" id="videoWrap" aria-hidden="false">
+      <video id="video" autoplay playsinline muted></video>
+
+      <!-- overlay for boxes + HUD -->
+      <canvas id="overlayCanvas"></canvas>
+
+      <!-- hidden processing canvases -->
+      <canvas id="procCanvas" class="hidden"></canvas>
+      <canvas id="prevCanvas" class="hidden"></canvas>
+
+      <div class="scanline" aria-hidden="true"></div>
+
+      <div id="hud" class="hud hidden" aria-hidden="false">
+        <div>SYSTEM: ACTIVE</div>
+        <div>MODE: MULTI</div>
+        <div>TARGETS: <span id="targetCount">0</span></div>
+        <div>MOTION: <span id="motionLevel">—</span>%</div>
+      </div>
+
+      <div id="timestamp" class="timestamp hidden" aria-hidden="false">
+        <div id="time"></div>
+        <div>CAMERA 8</div>
+      </div>
+    </div>
+
+    <!-- CONTROLS: outside the video-container so they sit BELOW the webcam -->
+    <div class="controls" role="group" aria-label="system controls">
+      <button id="startBtn" disabled>LOADING...</button>
+      <button id="stopBtn" class="hidden">TERMINATE</button>
+      <button id="presetBtn" class="hidden">PRESET: CHROMATIC</button>
+      <button id="recordBtn" class="hidden">● RECORD</button>
+    </div>
+
+
+  </div>
+
+  <script>
+  (function(){
+    // elements
+    const video = document.getElementById('video');
+    const overlayCanvas = document.getElementById('overlayCanvas');
+    const overlayCtx = overlayCanvas.getContext('2d');
+    const procCanvas = document.getElementById('procCanvas');
+    const procCtx = procCanvas.getContext('2d');
+    const prevCanvas = document.getElementById('prevCanvas');
+    const prevCtx = prevCanvas.getContext('2d');
+
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const presetBtn = document.getElementById('presetBtn');
+    const recordBtn = document.getElementById('recordBtn');
+    const hud = document.getElementById('hud');
+    const timestamp = document.getElementById('timestamp');
+    const timeEl = document.getElementById('time');
+    const targetCountEl = document.getElementById('targetCount');
+    const motionLevelEl = document.getElementById('motionLevel');
+
+    // audio + state
+    let synths = [];
+    let isPlaying = false;
+    let multiTargetMode = true; // ONLY multi target
+    let activeTargets = [];
+    let animationId = null;
+    let stream = null;
+    let timestampInterval = null;
+    
+    // recording state
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let isRecording = false;
+    let recordingCanvas = null;
+    let recordingCtx = null;
+    let recordingStream = null;
+
+    // detection tuning
+    let motionThreshold = 20;
+    const gridSize = 16;
+    let targetLifetime = 500;
+    
+    // preset system
+    let currentPreset = 'chromatic';
+    
+    const presets = {
+      chromatic: {
+        name: 'CHROMATIC',
+        scale: ['C3','C#3','D3','D#3','E3','F3','F#3','G3','G#3','A3','A#3','B3',
+                'C4','C#4','D4','D#4','E4','F4','F#4','G4','G#4','A4','A#4','B4',
+                'C5','C#5','D5','D#5','E5','F5','F#5','G5'],
+        oscillator: 'sine',
+        envelope: { attack: 0.04, decay: 0.15, sustain: 0.6, release: 0.6 },
+        threshold: 20,
+        lifetime: 500
+      },
+      folk: {
+        name: 'INDIE FOLK',
+        scale: ['E3','G3','A3','B3','D4','E4','G4','A4','B4','D5','E5','G5'],
+        oscillator: 'triangle',
+        envelope: { attack: 0.3, decay: 0.4, sustain: 0.7, release: 1.2 },
+        threshold: 15,
+        lifetime: 1500
+      },
+      classical: {
+        name: 'CLASSICAL',
+        scale: ['C3','D3','E3','F3','G3','A3','B3','C4','D4','E4','F4','G4','A4','B4',
+                'C5','D5','E5','F5','G5','A5','B5'],
+        oscillator: 'sawtooth',
+        envelope: { attack: 0.15, decay: 0.3, sustain: 0.5, release: 0.6 },
+        threshold: 20,
+        lifetime: 600
+      },
+      rave: {
+        name: 'RAVE',
+        scale: ['C2','D2','E2','F2','G2','A2','C3','D3','E3','F3','G3','A3',
+                'C4','E4','G4','C5','E5','G5'],
+        oscillator: 'square',
+        envelope: { attack: 0.001, decay: 0.1, sustain: 0.2, release: 0.1 },
+        threshold: 10,
+        lifetime: 200
+      }
+    };
+
+    let chromaticScale = presets.chromatic.scale;
+
+    // --- Setup camera ---
+    async function setupCamera(){
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+        video.srcObject = stream;
+
+        // wait for metadata so we get correct videoWidth/videoHeight
+        await new Promise((res) => {
+          if (video.readyState >= 2) return res();
+          video.addEventListener('loadedmetadata', res, { once: true });
+        });
+
+        // size canvases to match video native resolution
+        resizeCanvasesToVideo();
+
+        // draw an initial prev frame to avoid getImageData errors
+        try { prevCtx.drawImage(video, 0, 0, prevCanvas.width, prevCanvas.height); } catch(e){}
+
+        startBtn.disabled = false;
+        startBtn.textContent = 'INITIALIZE SYSTEM';
+      } catch (err) {
+        console.error('Camera error', err);
+        startBtn.textContent = 'ACCESS DENIED';
+        alert('Please allow camera access to use this app');
+      }
+    }
+
+    // --- Setup audio ---
+    function setupAudio(){
+      // build 8 simple synth voices
+      synths = [];
+      const preset = presets[currentPreset];
+      for(let i=0;i<8;i++){
+        const s = new Tone.Synth({
+          oscillator: { type: preset.oscillator },
+          envelope: preset.envelope
+        }).toDestination();
+        s.volume.value = -10;
+        synths.push(s);
+      }
+    }
+
+    // update timestamp
+    function updateTimestamp(){ 
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2,'0');
+      const mm = String(now.getMinutes()).padStart(2,'0');
+      const ss = String(now.getSeconds()).padStart(2,'0');
+      const ms = String(now.getMilliseconds()).padStart(3,'0');
+      timeEl.textContent = hh + ':' + mm + ':' + ss + '.' + ms;
+    }
+
+    // --- NOTE utilities ---
+    function getNoteForPosition(x, y, width){
+      let idx = Math.floor((x / width) * chromaticScale.length);
+      idx = Math.max(0, Math.min(idx, chromaticScale.length -1));
+      return chromaticScale[idx];
+    }
+
+    // --- Motion detection ---
+    function detectMotionRegions(){
+      // draw current frame into proc canvas
+      procCtx.drawImage(video, 0, 0, procCanvas.width, procCanvas.height);
+      let currentData;
+      try {
+        currentData = procCtx.getImageData(0,0,procCanvas.width,procCanvas.height);
+      } catch(e) {
+        // sometimes throws on cross-origin or not-ready frames
+        prevCtx.drawImage(video,0,0,prevCanvas.width,prevCanvas.height);
+        return [];
+      }
+
+      let prevData;
+      try {
+        prevData = prevCtx.getImageData(0,0,prevCanvas.width,prevCanvas.height);
+      } catch(e) {
+        prevCtx.drawImage(video,0,0,prevCanvas.width,prevCanvas.height);
+        return [];
+      }
+
+      const motionPoints = [];
+      let totalMotion = 0;
+      const w = procCanvas.width;
+      const h = procCanvas.height;
+      const threshold = presets[currentPreset].threshold;
+
+      for(let y=0; y<h; y+=gridSize){
+        for(let x=0; x<w; x+=gridSize){
+          let motion = 0;
+          let pixelCount = 0;
+          for(let dy=0; dy<gridSize && y+dy<h; dy++){
+            for(let dx=0; dx<gridSize && x+dx<w; dx++){
+              const i = ((y+dy)*w + (x+dx)) * 4;
+              const dr = Math.abs(currentData.data[i] - prevData.data[i]);
+              const dg = Math.abs(currentData.data[i+1] - prevData.data[i+1]);
+              const db = Math.abs(currentData.data[i+2] - prevData.data[i+2]);
+              motion += (dr+dg+db);
+              pixelCount++;
+            }
+          }
+          motion = motion / pixelCount / 3;
+          totalMotion += motion;
+
+          if(motion > threshold){
+            motionPoints.push({ x: x + gridSize/2, y: y + gridSize/2, intensity: motion });
+          }
+        }
+      }
+
+      // update prev frame for next loop
+      prevCtx.drawImage(video, 0, 0, prevCanvas.width, prevCanvas.height);
+
+      const avgMotion = totalMotion / ((procCanvas.width/gridSize)*(procCanvas.height/gridSize));
+      motionLevelEl.textContent = String(Math.min(100, Math.round(avgMotion)));
+
+      return motionPoints;
+    }
+
+    // clustering (simple greedy)
+    function clusterMotionPoints(points, maxClusters){
+      if(points.length === 0) return [];
+      if(points.length <= maxClusters) return points.slice();
+
+      points.sort((a,b) => b.intensity - a.intensity);
+      const clusters = [];
+      const radius = 80;
+
+      for(let i=0;i<points.length && clusters.length<maxClusters;i++){
+        const p = points[i];
+        const near = clusters.some(c => {
+          const d = Math.hypot(p.x - c.x, p.y - c.y);
+          return d < radius;
+        });
+        if(!near) clusters.push(p);
+      }
+      return clusters;
+    }
+
+    // draw targets overlay
+    function drawTargets(){
+      overlayCtx.clearRect(0,0,overlayCanvas.width,overlayCanvas.height);
+      
+      // Mirror the drawing to match the mirrored video
+      overlayCtx.save();
+      overlayCtx.scale(-1, 1);
+      overlayCtx.translate(-overlayCanvas.width, 0);
+      
+      overlayCtx.strokeStyle = '#00ff00';
+      overlayCtx.lineWidth = 2;
+      overlayCtx.shadowColor = '#00ff00';
+      overlayCtx.shadowBlur = 8;
+      overlayCtx.fillStyle = '#00ff00';
+
+      activeTargets.forEach(t=>{
+        const boxSize = 100;
+        const x = t.x - boxSize/2;
+        const y = t.y - boxSize/2;
+
+        overlayCtx.strokeRect(x, y, boxSize, boxSize);
+
+        // corners
+        const cs = 15;
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(x, y+cs); overlayCtx.lineTo(x, y); overlayCtx.lineTo(x+cs, y);
+        overlayCtx.stroke();
+
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(x+boxSize-cs, y); overlayCtx.lineTo(x+boxSize, y); overlayCtx.lineTo(x+boxSize, y+cs);
+        overlayCtx.stroke();
+
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(x, y+boxSize-cs); overlayCtx.lineTo(x, y+boxSize); overlayCtx.lineTo(x+cs, y+boxSize);
+        overlayCtx.stroke();
+
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(x+boxSize-cs, y+boxSize); overlayCtx.lineTo(x+boxSize, y+boxSize); overlayCtx.lineTo(x+boxSize, y+boxSize-cs);
+        overlayCtx.stroke();
+
+        // Un-mirror text so it's readable
+        overlayCtx.save();
+        overlayCtx.scale(-1, 1);
+        overlayCtx.font = 'bold 12px "Courier New"';
+        const label = 'TARGET ' + (t.synthIndex+1);
+        const labelWidth = overlayCtx.measureText(label).width;
+        const noteWidth = overlayCtx.measureText(t.note).width;
+        overlayCtx.fillText(label, -(x + 6 + labelWidth), y - 8);
+        overlayCtx.fillText(t.note, -(x + 6 + noteWidth), y + boxSize + 14);
+        overlayCtx.restore();
+
+        // crosshair
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(t.x-10, t.y); overlayCtx.lineTo(t.x+10, t.y);
+        overlayCtx.moveTo(t.x, t.y-10); overlayCtx.lineTo(t.x, t.y+10);
+        overlayCtx.lineWidth = 2;
+        overlayCtx.stroke();
+      });
+
+      overlayCtx.restore();
+      overlayCtx.shadowBlur = 0;
+    }
+
+    // main analysis loop
+    function analyzeVideo(){
+      // when multiTargetMode, allow up to 8 voices
+      const maxTargets = multiTargetMode ? 8 : 1;
+      const lifetime = presets[currentPreset].lifetime;
+
+      // detect motion
+      const motionPoints = detectMotionRegions();
+      const detected = clusterMotionPoints(motionPoints, maxTargets);
+
+      const now = Date.now();
+
+      // expire old targets and release their synths
+      activeTargets = activeTargets.filter(t=>{
+        const alive = (now - t.lastSeen) < lifetime;
+        if(!alive){
+          // release voice
+          const s = synths[t.synthIndex];
+          try { s.triggerRelease(); } catch(e){}
+        }
+        return alive;
+      });
+
+      // for each detected, either update nearest active or create new
+      detected.forEach(d => {
+        // find existing target within radius
+        let existing = null;
+        for(let t of activeTargets){
+          const dist = Math.hypot(t.x - d.x, t.y - d.y);
+          if(dist < 100){ existing = t; break; }
+        }
+
+        if(existing){
+          // smooth position + update intensity + timestamp
+          existing.x = existing.x * 0.7 + d.x * 0.3;
+          existing.y = existing.y * 0.7 + d.y * 0.3;
+          existing.intensity = d.intensity;
+          existing.lastSeen = now;
+
+          // update note if changed
+          const newNote = getNoteForPosition(existing.x, existing.y, procCanvas.width);
+          if(newNote !== existing.note){
+            existing.note = newNote;
+            // retrigger pitch (attack) for continuous voice
+            try { synths[existing.synthIndex].triggerAttack(newNote); } catch(e){}
+          }
+        } else {
+          // create new if we have spare synths
+          if(activeTargets.length < maxTargets){
+            const synthIndex = activeTargets.length; // simple allocation; works for this case
+            const note = getNoteForPosition(d.x, d.y, procCanvas.width);
+            const tObj = {
+              x: d.x, y: d.y, intensity: d.intensity,
+              note: note, synthIndex: synthIndex, lastSeen: now
+            };
+            activeTargets.push(tObj);
+            try { synths[synthIndex].triggerAttack(note); } catch(e){}
+          }
+        }
+      });
+
+      // if no detected motion and no active targets, release all synths
+      if(detected.length === 0 && activeTargets.length === 0){
+        synths.forEach(s => { try { s.triggerRelease(); } catch(e){} });
+      }
+
+      // update HUD + draw
+      targetCountEl.textContent = String(activeTargets.length);
+      drawTargets();
+
+      // queue next frame
+      animationId = requestAnimationFrame(analyzeVideo);
+    }
+
+    // Start / Stop handlers
+    async function startMusic(){
+      await Tone.start(); // user gesture required
+      
+      // MOBILE FIX: Force audio context to resume
+      if (Tone.context.state !== 'running') {
+        await Tone.context.resume();
+      }
+      
+      isPlaying = true;
+      Tone.Transport.start();
+
+      startBtn.classList.add('hidden');
+      stopBtn.classList.remove('hidden');
+      presetBtn.classList.remove('hidden');
+      recordBtn.classList.remove('hidden');
+      hud.classList.remove('hidden');
+      timestamp.classList.remove('hidden');
+
+      // keep a fast timestamp update
+      if (timestampInterval) clearInterval(timestampInterval);
+      timestampInterval = setInterval(updateTimestamp, 50);
+
+      analyzeVideo();
+    }
+
+    function stopMusic(){
+      isPlaying = false;
+      
+      // stop recording if active
+      if (isRecording) {
+        stopRecording();
+      }
+      
+      // stop audio
+      synths.forEach(s => { try { s.triggerRelease(); } catch(e){} });
+      activeTargets = [];
+      Tone.Transport.stop();
+
+      if(animationId) cancelAnimationFrame(animationId);
+      overlayCtx.clearRect(0,0,overlayCanvas.width,overlayCanvas.height);
+
+      startBtn.classList.remove('hidden');
+      stopBtn.classList.add('hidden');
+      presetBtn.classList.add('hidden');
+      recordBtn.classList.add('hidden');
+      hud.classList.add('hidden');
+      timestamp.classList.add('hidden');
+
+      // stop camera
+      if(stream){
+        stream.getTracks().forEach(t => t.stop());
+        stream = null;
+      }
+
+      if (timestampInterval) { clearInterval(timestampInterval); timestampInterval = null; }
+      
+      startBtn.textContent = 'RESTART SYSTEM';
+    }
+    
+    // Preset toggle
+    function cyclePreset() {
+      const presetKeys = Object.keys(presets);
+      const currentIndex = presetKeys.indexOf(currentPreset);
+      const nextIndex = (currentIndex + 1) % presetKeys.length;
+      currentPreset = presetKeys[nextIndex];
+      
+      chromaticScale = presets[currentPreset].scale;
+      presetBtn.textContent = 'PRESET: ' + presets[currentPreset].name;
+      
+      // Rebuild synths with new settings
+      synths.forEach(s => { try { s.dispose(); } catch(e){} });
+      setupAudio();
+      
+      // Reset targets since scale changed
+      activeTargets = [];
+    }
+    
+    // Recording functions
+    function startRecording() {
+      if (isRecording) return;
+      
+      // Create a canvas to composite video + overlay
+      recordingCanvas = document.createElement('canvas');
+      recordingCanvas.width = video.videoWidth;
+      recordingCanvas.height = video.videoHeight;
+      recordingCtx = recordingCanvas.getContext('2d');
+      
+      // Capture canvas stream
+      recordingStream = recordingCanvas.captureStream(30); // 30 fps
+      
+      // Add audio from Tone.js
+      const dest = Tone.getDestination();
+      const audioStream = dest.context.createMediaStreamDestination();
+      Tone.getDestination().connect(audioStream);
+      
+      // Combine video and audio
+      const tracks = [...recordingStream.getTracks(), ...audioStream.stream.getTracks()];
+      const combinedStream = new MediaStream(tracks);
+      
+      recordedChunks = [];
+      mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm;codecs=vp9' });
+      
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          recordedChunks.push(e.data);
+        }
+      };
+      
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'music-recording-' + Date.now() + '.webm';
+        a.click();
+        URL.revokeObjectURL(url);
+      };
+      
+      mediaRecorder.start();
+      isRecording = true;
+      recordBtn.textContent = '■ STOP REC';
+      recordBtn.classList.add('recording');
+      
+      // Start compositing loop
+      compositeRecording();
+    }
+    
+    function compositeRecording() {
+      if (!isRecording) return;
+      
+      // Draw mirrored video
+      recordingCtx.save();
+      recordingCtx.scale(-1, 1);
+      recordingCtx.translate(-recordingCanvas.width, 0);
+      recordingCtx.drawImage(video, 0, 0, recordingCanvas.width, recordingCanvas.height);
+      recordingCtx.restore();
+      
+      // Draw overlay on top (already mirrored in drawTargets)
+      recordingCtx.drawImage(overlayCanvas, 0, 0);
+      
+      requestAnimationFrame(compositeRecording);
+    }
+    
+    function stopRecording() {
+      if (!isRecording) return;
+      
+      isRecording = false;
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+      }
+      
+      recordBtn.textContent = '● RECORD';
+      recordBtn.classList.remove('recording');
+      
+      if (recordingStream) {
+        recordingStream.getTracks().forEach(t => t.stop());
+        recordingStream = null;
+      }
+    }
+    
+    function toggleRecording() {
+      if (isRecording) {
+        stopRecording();
+      } else {
+        startRecording();
+      }
+    }
+
+    // handle resizing — keep canvases matched to displayed video size
+    function resizeCanvasesToVideo(){
+      const w = video.videoWidth || video.clientWidth || 640;
+      const h = video.videoHeight || Math.round(w * 3/4) || 480;
+
+      overlayCanvas.width = w; overlayCanvas.height = h;
+      procCanvas.width = w; procCanvas.height = h;
+      prevCanvas.width = w; prevCanvas.height = h;
+    }
+
+    // event wiring
+    startBtn.addEventListener('click', startMusic);
+    stopBtn.addEventListener('click', stopMusic);
+    presetBtn.addEventListener('click', cyclePreset);
+    recordBtn.addEventListener('click', toggleRecording);
+
+    // init
+    setupAudio();
+    setupCamera();
+
+    // ensure canvases updated when metadata available or resized
+    video.addEventListener('loadedmetadata', resizeCanvasesToVideo);
+    window.addEventListener('resize', resizeCanvasesToVideo);
+
+  })();
+  </script>
+</body>
+</html>
