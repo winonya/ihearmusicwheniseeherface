@@ -10,7 +10,7 @@
 
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html,body { height: 100%; background: white; color:#00ff00; font-family: "Courier New", monospace; overflow: hidden; }
+    html,body { height: 100%; background: white; color:#9F27F5; font-family: "Courier New", monospace; overflow: hidden; }
 
     /* Main wrapper — vertical flow: video -> controls */
     .wrap {
@@ -81,8 +81,8 @@
       top:8px;
       left:8px;
       font-size:0.7rem;
-      color:#00ff00;
-      text-shadow: 0 0 5px #00ff00;
+      color:#9F27F5;
+      text-shadow: 0 0 5px #9F27F5;
       pointer-events:none;
       z-index: 6;
       line-height: 1.3;
@@ -93,8 +93,8 @@
       top:8px;
       right:8px;
       font-size:0.7rem;
-      color:#00ff00;
-      text-shadow: 0 0 5px #00ff00;
+      color:#9F27F5;
+      text-shadow: 0 0 5px #9F27F5;
       pointer-events:none;
       z-index: 6;
       line-height: 1.3;
@@ -148,11 +148,11 @@
 
     .instructions {
       width:100%;
-      border:1px solid #00ff00;
-      background: rgba(0,255,0,0.025);
+      border:1px solid #9F27F5;
+      background: rgba(159,39,245,0.025);
       padding: 12px;
       font-size: 0.88rem;
-      color:#00ff00;
+      color:#9F27F5;
     }
 
     .scanline {
@@ -160,7 +160,7 @@
       top:0; left:0;
       width:100%; height:100%;
       pointer-events:none;
-      background: linear-gradient(to bottom, transparent 50%, rgba(0,255,0,0.03) 50%);
+      background: linear-gradient(to bottom, transparent 50%, rgba(159,39,245,0.03) 50%);
       background-size:100% 4px;
       animation: scanline 8s linear infinite;
       mix-blend-mode: screen;
@@ -449,11 +449,11 @@
       overlayCtx.scale(-1, 1);
       overlayCtx.translate(-overlayCanvas.width, 0);
       
-      overlayCtx.strokeStyle = '#00ff00';
+      overlayCtx.strokeStyle = '#9F27F5';
       overlayCtx.lineWidth = 2;
-      overlayCtx.shadowColor = '#00ff00';
+      overlayCtx.shadowColor = '#9F27F5';
       overlayCtx.shadowBlur = 8;
-      overlayCtx.fillStyle = '#00ff00';
+      overlayCtx.fillStyle = '#9F27F5';
 
       activeTargets.forEach(t=>{
         const boxSize = 100;
